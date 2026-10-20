@@ -179,7 +179,7 @@ body {
 .opcao .desc { grid-column: 2; font-size: .8em; color: var(--texto-suave); }
 .opcao:not(:has(img)) { grid-template-columns: 1fr; }
 .opcao:not(:has(img)) .desc { grid-column: 1; }
-.opcao.foco, .opcao:hover { border-color: var(--ouro); background: rgba(255, 210, 63, .12); }
+.opcao.foco { border-color: var(--ouro); background: rgba(255, 210, 63, .12); }
 .opcao.foco .rot::before { content: "▶ "; color: var(--ouro); }
 .opcao.desativado { opacity: .4; }
 .opcao:focus-visible { outline: 2px solid var(--azul); }
@@ -2483,11 +2483,13 @@ function menu(itens, { titulo = "", container = ui.escolhas, cancelavel = true, 
       if (it.desc) { const d = document.createElement("span"); d.className = "desc"; d.textContent = it.desc; b.appendChild(d); }
       if (it.desativado) b.classList.add("desativado");
       b.addEventListener("click", () => { if (!it.desativado) escolher(idx); else Som.efeito("erro"); });
+      // Mouse em cima muda a seleção, para nunca haver duas opções destacadas.
+      b.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" && foco !== idx) { foco = idx; marcar(false); } });
       lista.appendChild(b);
       return b;
     });
     let foco = Math.max(0, itens.findIndex((i) => !i.desativado));
-    const marcar = () => { botoes.forEach((b, i) => b.classList.toggle("foco", i === foco)); if (botoes[foco] && botoes[foco].scrollIntoView) botoes[foco].scrollIntoView({ block: "nearest" }); };
+    const marcar = (rolar = true) => { botoes.forEach((b, i) => b.classList.toggle("foco", i === foco)); if (rolar && botoes[foco] && botoes[foco].scrollIntoView) botoes[foco].scrollIntoView({ block: "nearest" }); };
     marcar();
     function escolher(idx) { Som.efeito("blip"); tirar(); container.hidden = true; container.innerHTML = ""; ok(idx); }
     const tirar = aoBotao((k) => {
