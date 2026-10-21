@@ -7386,6 +7386,8 @@ async function escolherFaseP() {
   ui.titulo.hidden = true;
   Som.iniciar();
   E.modo = "cinema";
+  // se a fase anterior ainda está terminando, espera ela liberar antes de começar a nova
+  for (let i = 0; i < 100 && E.ocupado; i++) await J.esperar(50);
   rodar(async () => { await fade(true); await jogarFase(r + 1, { retorno: "titulo", avulsa: true }); });
 }
 
