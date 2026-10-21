@@ -6517,6 +6517,7 @@ function poder2Atual() {
 
 function resgatarP(cx, cy, tipo) {
   P.resgates++;
+  P.jog.felizAte = P.t + 1.2;
   Som.efeito("item");
   const arte = tipo === "rede" ? ["an_coelho_pula", "an_esquilo_flor", "an_passaro_canta", "an_zebrinha_pula"][P.resgates % 4] : ["an_coelho_pula", "an_esquilo_flor", "an_passaro_canta"][P.resgates % 3];
   efeitoP(arte, cx * 16 + 8, cy * 16 + 8, 1.4, 0.3, { sobe: 50, unico: true });
@@ -6528,7 +6529,7 @@ function ferirP(dirEmpurra) {
   if (c.inv > P.t || P.nevoaAte > P.t || (c.acao && c.acao.ate > P.t && c.acao.tipo === "ferrao") || P.acabou) return;
   P.coracoes--;
   Som.efeito("dano");
-  c.inv = P.t + 1.4; c.vx = dirEmpurra * 130; c.vy = -170; c.empurrao = P.t + 0.25; c.acao = null;
+  c.inv = P.t + 1.4; c.dorAte = P.t + 0.55; c.vx = dirEmpurra * 130; c.vy = -170; c.empurrao = P.t + 0.25; c.acao = null;
   if (P.coracoes <= 0) derrotaP();
 }
 function caiuP(liquido) {
@@ -6619,7 +6620,7 @@ function passoMundoP(ent, dt) {
     const ch = celulaP(P, cx, cy);
     if (ch === "x" && c.y + c.h > cy * 16 + 9) { ferirP(-c.dir || -1); }
     else if ((ch === "v" || ch === "w") && c.y + c.h > cy * 16 + 6) { caiuP(true); return; }
-    else if (ch === "F" || ch === "*") { P.mapa[cy][cx] = "."; P.flores++; Som.efeito("blip"); efeitoP(["fx_estrela0", "fx_estrela1"], cx * 16 + 8, cy * 16 + 8, 0.35, 0.22); }
+    else if (ch === "F" || ch === "*") { P.mapa[cy][cx] = "."; P.flores++; P.jog.felizAte = P.t + 0.45; Som.efeito("blip"); efeitoP(["fx_estrela0", "fx_estrela1"], cx * 16 + 8, cy * 16 + 8, 0.35, 0.22); }
     else if (ch === "f") { P.mapa[cy][cx] = "."; resgatarP(cx, cy, "filhote"); }
     else if (ch === "C" && !(P.cpCel && P.cpCel.cx === cx && P.cpCel.cy === cy)) {
       P.cpCel = { cx, cy }; P.cp = { x: cx * 16 + 8 - c.w / 2, y: (cy + 1) * 16 - c.h }; P.coracoes = 3;
@@ -7005,37 +7006,190 @@ function desenharCelulaP(ch, cx, cy, x, y, t) {
   }
 }
 
+// ---------------- ANIMAÇÃO DOS HERÓIS (pernas e caretas) ----------------
+// Os desenhos da família têm só 1 ou 2 quadros. Para os amigos andarem de verdade,
+// separamos as pernas do corpo (em pedaços da própria arte) e mexemos cada perna.
+// As caretas (piscar, feliz, ai!, bravo) são pintadas por cima dos olhos.
+const PERNAS_P = {
+  za0: { y: 55, xa: 9, xb: 30, m: 18 },
+  za1: { y: 57, xa: 9, xb: 30, m: 18 },
+  fa0: { y: 54, xa: 6, xb: 31, m: 17, verde: true },
+  fa1: { y: 55, xa: 10, xb: 33, m: 18, verde: true },
+  ch0: { y: 53, xa: 12, xb: 52, m: 31 },
+};
+const ROSTO_P = {
+  za0: { pele: "#fdcf06", linha: "#3a1d08", olhos: [[28, 26, 32, 31], [37, 26, 42, 31]] },
+  fa0: { pele: "#79cc07", linha: "#173d06", olhos: [[33, 16, 39, 21], [46, 16, 50, 20]] },
+  ch0: { pele: "#f8c478", linha: "#3a1d08", olhos: [[33, 21, 37, 25], [41, 21, 46, 25]] },
+};
+const cachePartes = {};
+function partesP(k) {
+  if (cachePartes[k] !== undefined) return cachePartes[k];
+  const img = ARTE[k], cfg = PERNAS_P[k];
+  if (!img || !cfg || !img.width) return (cachePartes[k] = null);
+  const W = img.width, H = img.height;
+  const nova = () => { const cv = document.createElement("canvas"); cv.width = W; cv.height = H; return cv; };
+  const base = nova(), bx = base.getContext("2d");
+  bx.drawImage(img, 0, 0);
+  let dados;
+  try { dados = bx.getImageData(0, 0, W, H); } catch (e) { return (cachePartes[k] = null); }
+  const corpo = bx.createImageData(W, H), pe = [bx.createImageData(W, H), bx.createImageData(W, H)];
+  const d = dados.data;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4;
+    if (!d[i + 3]) continue;
+    let perna = y >= cfg.y && x >= cfg.xa && x <= cfg.xb;
+    if (perna && cfg.verde) perna = d[i + 1] > d[i] && d[i + 1] > d[i + 2] - 10 || (d[i] + d[i + 1] + d[i + 2] < 120);
+    const destinos = [];
+    if (perna) { destinos.push(pe[x < cfg.m ? 0 : 1]); if (y < cfg.y + 2) destinos.push(corpo); }
+    else destinos.push(corpo);
+    for (const o of destinos) { o.data[i] = d[i]; o.data[i + 1] = d[i + 1]; o.data[i + 2] = d[i + 2]; o.data[i + 3] = d[i + 3]; }
+  }
+  const montar = (id) => { const cv = nova(); cv.getContext("2d").putImageData(id, 0, 0); return cv; };
+  return (cachePartes[k] = { W, H, corpo: montar(corpo), pe: [montar(pe[0]), montar(pe[1])] });
+}
+
+// qual careta o herói está fazendo agora
+function caretaP(c, t) {
+  if (c.dorAte > P.t) return "ai";
+  if (c.felizAte > P.t || P.acabou) return "feliz";
+  const acao = c.acao && c.acao.ate > P.t ? c.acao.tipo : null;
+  if (acao) return "bravo";
+  if (P.nevoaAte > P.t || c.planando) return "bravo";
+  const ciclo = (t + (c.semente || 0)) % 3300;
+  if (ciclo < 130 || (ciclo > 330 && ciclo < 430 && (c.semente || 0) % 2)) return "pisca";
+  return null;
+}
+
+// pinta a careta por cima dos olhos (coordenadas em pixels da arte)
+function pintarCaretaP(k, careta) {
+  const r = ROSTO_P[k];
+  if (!r || !careta) return;
+  r.olhos.forEach(([x0, y0, x1, y1], lado) => {
+    const w = x1 - x0 + 1, h = y1 - y0 + 1, meio = x0 + (w - 1) / 2;
+    if (careta === "bravo") {
+      // sobrancelha inclinada para o meio do rosto: cara de concentração
+      g.fillStyle = r.linha;
+      for (let i = 0; i < w; i++) {
+        const desce = lado === 0 ? i / (w - 1) : 1 - i / (w - 1);
+        g.fillRect(x0 + i, y0 - 2 + Math.round(desce * 2), 1, 2);
+      }
+      return;
+    }
+    g.fillStyle = r.pele; g.fillRect(x0, y0, w, h);
+    g.fillStyle = r.linha;
+    if (careta === "pisca") {
+      g.fillRect(x0 + 1, y1 - 1, w - 2, 1); g.fillRect(x0, y1 - 2, 1, 1); g.fillRect(x1, y1 - 2, 1, 1);
+    } else if (careta === "feliz") {
+      // olhinhos em arco ( ^ ^ )
+      for (let i = 0; i < w; i++) {
+        const alt = Math.round((1 - Math.abs(x0 + i - meio) / (w / 2)) * 2.4);
+        g.fillRect(x0 + i, y1 - 1 - alt, 1, 2);
+      }
+    } else if (careta === "ai") {
+      // olhos apertados ( > < )
+      const ponta = lado === 0 ? x1 : x0, costas = lado === 0 ? x0 : x1, cy = y0 + (h - 1) / 2;
+      for (let i = 0; i < w; i++) {
+        const x = costas + (ponta - costas) * i / (w - 1);
+        const abre = (1 - i / (w - 1)) * (h / 2 - 0.5);
+        g.fillRect(Math.round(x), Math.round(cy - abre), 1, 1);
+        g.fillRect(Math.round(x), Math.round(cy + abre), 1, 1);
+      }
+    }
+  });
+}
+
 function spriteHeroiP(c, t) {
   const h = HEROIS_P[c.heroi], esp = c.dir < 0;
   const acao = c.acao && c.acao.ate > P.t ? c.acao.tipo : null;
   if (c.heroi === "super") {
     if (acao === "forca") return { img: artP("sg_ergue", esp), e: 0.62 };
+    if ((c.felizAte > P.t || P.acabou) && c.chao && Math.abs(c.vx) < 10) return { img: artP("sg_feliz" + (Math.floor(t / 160) % 3), esp), e: 0.8 };
     if (c.voando || (!c.chao && c.vy < -20 && c.voouAntes)) return { img: artP("sg_voa_lado" + (Math.floor(t / 90) % 8), esp), e: 0.92 };
-    if (!c.chao) return { img: artP("sg_voa_lado2", esp), e: 0.92 };
-    if (Math.abs(c.vx) > 10) return { img: artP("sg_lado" + (Math.floor(t / 80) % 8), esp), e: 0.92 };
+    if (!c.chao) return { img: artP(c.vy < 0 ? "sg_lado2" : "sg_lado6", esp), e: 0.92 };
+    if (Math.abs(c.vx) > 10) return { img: artP("sg_lado" + (Math.floor(c.passo / 5) % 8), esp), e: 0.92 };
     return { img: artP("sg_lado0", esp), e: 0.92 };
   }
-  const q = h.quadros.length > 1 ? h.quadros[Math.floor(t / (h.anim || 120)) % h.quadros.length] : h.quadros[0];
-  return { img: artP(q, esp), e: 1 };
+  return { img: artP(h.quadros[0], esp), e: 1 };
 }
 
 function desenharHeroiP(c, t, alpha = 1) {
-  const s = spriteHeroiP(c, t);
-  let bob = 0;
-  if (c.heroi !== "super" && c.chao && Math.abs(c.vx) > 10) bob = -Math.abs(Math.sin(t / 70)) * 1.5;
-  if (c.heroi === "zangao" || c.heroi === "fadinha") bob += Math.sin(t / 160) * 0.6;
+  const h = HEROIS_P[c.heroi];
+  if (c.semente === undefined) c.semente = Math.floor(Math.random() * 3000);
+  // passos contados pela distância andada, para a perna acompanhar a velocidade
+  const dtA = c.tA ? Math.min(0.1, (t - c.tA) / 1000) : 0; c.tA = t;
+  c.passo = (c.passo || 0) + Math.abs(c.vx) * dtA;
+  // pulo e pouso: estica ao subir, achata ao cair no chão
+  if (c.chao && c.noArAntes && c.vyAntes > 120) c.pouso = P.t;
+  c.noArAntes = !c.chao; c.vyAntes = c.vy;
+  let sx = 1, sy = 1;
+  const desdePouso = P.t - (c.pouso || -9);
+  if (desdePouso < 0.14) { const k = 1 - desdePouso / 0.14; sx = 1 + 0.16 * k; sy = 1 - 0.14 * k; }
+  else if (!c.chao && c.vy < -120 && !c.voando) { sx = 0.92; sy = 1.08; }
   const acao = c.acao && c.acao.ate > P.t ? c.acao.tipo : null;
   const x = c.x + c.w / 2 - P.cam.x, y = c.y + c.h - P.cam.y;
   let a = alpha;
-  if (c.inv > P.t && Math.floor(t / 80) % 2) a *= 0.35;
+  if (c.inv > P.t && c.dorAte <= P.t && Math.floor(t / 80) % 2) a *= 0.35;
   if (P.nevoaAte > P.t && c === P.jog) {
     a *= 0.45;
     centroPintar(ARTE["fx_nevoa" + (Math.floor(t / 150) % 4)], x, y - c.h / 2, 0.42, 0.75);
   }
-  // inclinação na marretada
-  if (acao === "marreta" || acao === "pancada") {
-    g.save(); g.translate(R(x), R(y)); g.rotate((acao === "pancada" ? 0.25 : -0.35) * c.dir); pePintar(s.img, 0, 0, s.e, a); g.restore();
-  } else pePintar(s.img, x, y + bob, s.e, a);
+  const anda = c.chao && Math.abs(c.vx) > 10;
+  let bob = 0;
+  if (c.heroi !== "super" && anda) bob = -Math.abs(Math.sin(c.passo / 4.2)) * 1.2;
+  if (c.heroi === "zangao" || c.heroi === "fadinha") bob += Math.sin(t / 160) * 0.6;
+  let giro = 0;
+  if (acao === "marreta" || acao === "pancada") giro = (acao === "pancada" ? 0.25 : -0.35) * c.dir;
+  if (c.dorAte > P.t) giro = -0.18 * c.dir;
+
+  if (c.heroi === "super") {
+    const s = spriteHeroiP(c, t);
+    g.save(); g.translate(R(x), R(y + bob)); g.rotate(giro); g.scale(sx, sy);
+    pePintar(s.img, 0, 0, s.e, a); g.restore();
+  } else {
+    // quadro: asas batendo quando parado ou no ar; careta sempre no quadro 0
+    const careta = caretaP(c, t);
+    let k = h.quadros[0];
+    if (h.quadros.length > 1 && !careta) k = h.quadros[Math.floor(t / (h.anim || 120)) % h.quadros.length];
+    const pt = partesP(k), img = ARTE[k];
+    if (!img) return;
+    const W = img.width, H = img.height;
+    // pernas: [dx, dy] de cada perna em pixels da arte
+    let pL = [0, 0], pR = [0, 0];
+    const ph = c.passo / 4.2;
+    const flutua = c.heroi !== "champulinho";
+    if (anda) {
+      const s1 = Math.sin(ph), c1 = Math.cos(ph);
+      if (flutua) { pL = [c1 * 2.5, s1 * 2]; pR = [-c1 * 2.5, -s1 * 2]; }
+      else { pL = [c1 * 3.5, -Math.max(0, s1) * 5]; pR = [-c1 * 3.5, -Math.max(0, -s1) * 5]; }
+    } else if (!c.chao) {
+      if (c.vy < 0) { pL = [3, -4]; pR = [-1, flutua ? 1 : 0]; }
+      else { pL = [2, flutua ? 2 : 1]; pR = [-2, flutua ? 3 : 1]; }
+    } else if (flutua) {
+      const s1 = Math.sin(t / 260);
+      pL = [0, s1]; pR = [0, -s1];
+    }
+    g.save();
+    g.translate(R(x), R(y + bob));
+    g.rotate(giro);
+    g.scale((c.dir < 0 ? -1 : 1) * sx / ESC, sy / ESC);
+    g.translate(-Math.round(W / 2), -H);
+    if (a !== 1) g.globalAlpha = a;
+    if (pt) {
+      g.drawImage(pt.pe[0], Math.round(pL[0]), Math.round(pL[1]));
+      g.drawImage(pt.pe[1], Math.round(pR[0]), Math.round(pR[1]));
+      g.drawImage(pt.corpo, 0, 0);
+    } else g.drawImage(img, 0, 0);
+    pintarCaretaP(k, careta);
+    g.globalAlpha = 1;
+    g.restore();
+  }
+  // estrelinhas rodando na cabeça quando leva um susto
+  if (c.dorAte > P.t) for (let i = 0; i < 3; i++) {
+    const ang = t / 160 + i * 2.1;
+    g.fillStyle = i % 2 ? "#ffe066" : "#ffffff";
+    g.fillRect(R(x + Math.cos(ang) * 6), R(y - c.h - 3 + Math.sin(ang) * 1.5), 1, 1);
+  }
   if (acao === "ferrao") centroPintar(artP("fx_ferrao" + (Math.floor(t / 60) % 3), c.dir < 0), x + c.dir * 12, y - c.h / 2, 0.42);
   if (c.planando && Math.floor(t / 90) % 2) { g.fillStyle = "rgba(255,255,255,.6)"; g.fillRect(R(x - 7), R(y - 10), 2, 1); g.fillRect(R(x + 5), R(y - 10), 2, 1); }
   if (c.voando) for (let i = 0; i < 2; i++) P.parts.push({ x: c.x + c.w / 2 - c.dir * 6, y: c.y + c.h - 2, vx: -c.dir * 30 + (Math.random() - .5) * 20, vy: 20, vida: 0.35, cor: Math.random() < 0.5 ? "#8fdc7f" : "#ffe9a0" });
